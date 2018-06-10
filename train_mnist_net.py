@@ -15,8 +15,9 @@ import os
 import utils.data as data
 import utils.mnist_net as mnet
 import tensorflow as tf
-from tensorflow.contrib.data import Iterator
+#from tensorflow.contrib.data import Iterator
 import configuration_mnist as conf
+Iterator = tf.data.Iterator
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
