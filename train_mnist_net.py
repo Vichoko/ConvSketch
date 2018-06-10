@@ -122,7 +122,7 @@ if __name__ == '__main__':
             print ("restoring .....\n")
             #saver = tf.train.import_meta_graph('./trained/mnist_net-3000.meta')
             #saver.restore(sess,tf.train.latest_checkpoint('./trained/'))#
-            saver.restore(sess, conf.SNAPSHOT_PREFIX + '-1999')
+            saver.restore(sess, conf.SNAPSHOT_PREFIX + '-999')
             test_loss = 0
             test_acc = 0
             for i_test in range(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST):

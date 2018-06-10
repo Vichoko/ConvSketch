@@ -20,4 +20,4 @@ import configuration_sketch as conf
 
 if __name__ == '__main__':
     udata.createMnistTFRecord(conf.DATA_DIR)
-    print("tfrecords created for mnist")
+    print("tfrecords created for sketch")

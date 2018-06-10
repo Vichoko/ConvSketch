@@ -2,7 +2,7 @@
 Configuration file
 """
 
-NUM_ITERATIONS = 10000 # 1 iteration =  1 batch
+NUM_ITERATIONS = 1000 # 1 iteration =  1 batch
 DATASET_SIZE = 60000  # for training
 BATCH_SIZE = 100
 ESTIMATED_NUMBER_OF_BATCHES = 600
