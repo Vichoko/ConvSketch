@@ -10,4 +10,4 @@ ESTIMATED_NUMBER_OF_BATCHES_TEST = 100
 SNAPSHOT_TIME = 1000
 TEST_TIME = 600
 SNAPSHOT_PREFIX = "./trained/mnist_net"
-DATA_DIR = "/home/vision/smb-datasets/MNIST/source"
+DATA_DIR = "./ConvSketch/data"
