@@ -8,14 +8,19 @@ Description: A list of function to create tfrecords
 """
 
 import os
+import random
 import struct
 import sys
 
+import numpy
 import numpy as np
 import tensorflow as tf
 
 
 # %%
+from configuration_sketch import data_path
+
+
 def _int64_feature(value):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
@@ -28,33 +33,6 @@ def _bytes_feature(value):
 # %%
 def _float_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
-
-
-# load mnist from the binay files
-def loadMNIST(pathname=".", dataset="train", shuffle=True):
-    if dataset == "train":
-        fname_images = os.path.join(pathname, 'train-images.idx3-ubyte')
-        fname_labels = os.path.join(pathname, 'train-labels.idx1-ubyte')
-    elif dataset == "test":
-        fname_images = os.path.join(pathname, 't10k-images.idx3-ubyte')
-        fname_labels = os.path.join(pathname, 't10k-labels.idx1-ubyte')
-    else:
-        raise ValueError("use loadMNIST with train | test")
-
-    with open(fname_labels, 'rb') as f_lbl:
-        magic, num = struct.unpack(">II", f_lbl.read(8))
-        labels = np.fromfile(f_lbl, dtype=np.uint8)
-
-    with open(fname_images, 'rb') as f_img:
-        magic, num, rows, cols = struct.unpack(">IIII", f_img.read(16))
-        images = np.fromfile(f_img, dtype=np.uint8).reshape(num, rows, cols)
-
-    if shuffle:
-        inds = list(range(len(labels)))
-        np.random.shuffle(inds)
-        images = images[inds]
-        labels = labels[inds]
-    return images, labels
 
 
 # creating tfrecords
@@ -82,27 +60,6 @@ def createTFRecord(images, labels, tfr_filename):
     sys.stdout.flush()
     return mean_image
 
-
-# %%
-# create TFRecords for MNIST dataset
-def createMnistTFRecord(str_path):
-    # ------------- creating train data
-    images, labels = loadMNIST(str_path, dataset="train", shuffle=True)
-    tfr_filename = os.path.join(str_path, "train.tfrecords")
-    training_mean = createTFRecord(images, labels, tfr_filename)
-    print("train_record saved at {}.".format(tfr_filename))
-    # -------------- creating test data
-    images, labels = loadMNIST(str_path, dataset="test", shuffle=True)
-    tfr_filename = os.path.join(str_path, "test.tfrecords")
-    createTFRecord(images, labels, tfr_filename)
-    print("test_record saved at {}.".format(tfr_filename))
-    # saving training mean
-    mean_file = os.path.join(str_path, "mean.dat")
-    print("mean_file {}".format(training_mean.shape))
-    training_mean.tofile(mean_file)
-    print("mean_file saved at {}.".format(mean_file))
-
-
 # ---------parser_tfrecord for mnist
 def parser_tfrecord(serialized_example):
     features = tf.parse_example([serialized_example],
@@ -119,3 +76,65 @@ def parser_tfrecord(serialized_example):
     label = tf.reshape(label, [10])
     label = tf.cast(label, tf.float32)
     return image, label
+
+
+def create_sketch_tfrecords_from_npy_dumps():
+    # Config
+    CLASSES_COUNT = 100
+    TRAIN_EXAMPLES_PER_CLASS = 1000
+    TEST_EXAMPLES_PER_CLASS = 50
+
+    # choose 100 classes
+    data_dir_ls = os.listdir(data_path)
+    data_dir_ls = [element for element in data_dir_ls if ".npy" in element] # list only ".npy" files
+    chosen_classes_filenames = random.choices(data_dir_ls, k=CLASSES_COUNT)
+
+    # create accumulators
+    train_bitmaps = None
+    train_labels = []
+
+    test_bitmaps = None
+    test_labels = []
+
+    for idx, class_filename in enumerate(chosen_classes_filenames):
+        # load sketches to numpy arrays (accumulators)
+        print("processing class {}".format(chosen_classes_filenames[idx].replace(".npy", "")))
+        # load & reshape
+        class_bitmaps = numpy.load(str(data_path / class_filename), 'r')
+        class_bitmaps = numpy.reshape(class_bitmaps, (class_bitmaps.shape[0], 28, 28))
+
+        # instance numpy array accumulators
+        if train_bitmaps is None:
+            train_bitmaps = numpy.empty((0, class_bitmaps.shape[1], class_bitmaps.shape[2]))
+        if test_bitmaps is None:
+            test_bitmaps = numpy.empty((0, class_bitmaps.shape[1], class_bitmaps.shape[2]))
+
+        # sample bitmaps for train and testing
+        train_bitmaps = numpy.concatenate((random.choices(class_bitmaps, k=TRAIN_EXAMPLES_PER_CLASS), train_bitmaps))
+        train_labels += [idx for _ in range(TRAIN_EXAMPLES_PER_CLASS)]
+
+        test_bitmaps = numpy.concatenate((random.choices(class_bitmaps, k=TEST_EXAMPLES_PER_CLASS), test_bitmaps))
+        test_labels += [idx for _ in range(TEST_EXAMPLES_PER_CLASS)]
+
+    from sklearn.utils import shuffle
+    train_bitmaps, train_labels = shuffle(train_bitmaps, train_labels)
+
+    # train and test tf records
+    training_mean = createTFRecord(
+        train_bitmaps,
+        train_labels,
+        os.path.join(str(data_path), "train.tfrecords")
+    )
+    print('info: train.tfrecords saved')
+    createTFRecord(
+        test_bitmaps,
+        test_labels,
+        os.path.join(str(data_path), "test.tfrecords")
+    )
+    print('info: test.tfrecords saved')
+
+    # save mean in file
+    mean_file = os.path.join(str(data_path), "mean.dat")
+    print("info: mean_file {}".format(training_mean.shape))
+    training_mean.tofile(mean_file)
+    print("info: mean_file saved at {}.".format(mean_file))

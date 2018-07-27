@@ -9,23 +9,26 @@ A convolutional neural network for mnist
 
 """
 
-import numpy as np
-import sys
 import os
-import utils.data as data
-import utils.skNet as sknet
+import sys
+
+import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.data import Iterator
+
 import configuration_sketch as conf
+import utils.data as data
+import utils.skNet as sknet
+from configuration_sketch import data_path
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         raise ValueError("input incorrect <mode> <device>")
     run_mode = sys.argv[1]
     device_mode = sys.argv[2]
-    if  run_mode not in ["train", "test"] :
+    if run_mode not in ["train", "test"]:
         raise ValueError("mode should be  train or test")
-    if  device_mode not in ["gpu", "cpu"] :
+    if device_mode not in ["gpu", "cpu"]:
         raise ValueError("device not supported, choose cpu or gpu")
 
     if device_mode == "gpu":
@@ -33,79 +36,83 @@ if __name__ == '__main__':
     else:
         device_name = "/cpu:0"
 
-    print ("loading data [train and test] \n")
-    filename_train = os.path.join(conf.DATA_DIR, "train.tfrecords")
-    filename_test = os.path.join(conf.DATA_DIR, "test.tfrecords")
-    #---------------read TFRecords data  for training
+    print("loading data [train and test] \n")
+    filename_train = os.path.join(str(data_path), "train.tfrecords")
+    filename_test = os.path.join(str(data_path), "train.tfrecords")
+    # ---------------read TFRecords data  for training
     data_train = tf.data.TFRecordDataset(filename_train)
     data_train = data_train.map(data.parser_tfrecord)
     data_train = data_train.batch(conf.BATCH_SIZE)
     data_train = data_train.shuffle(conf.ESTIMATED_NUMBER_OF_BATCHES)
-    #---------------read TFRecords data  for validation
+    # ---------------read TFRecords data  for validation
     data_test = tf.data.TFRecordDataset(filename_test)
     data_test = data_test.map(data.parser_tfrecord)
     data_test = data_test.batch(conf.BATCH_SIZE)
     data_test = data_test.shuffle(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-    #defining saver to save snapshots
-    #defining a reinitializable iterator
+    # defining saver to save snapshots
+    # defining a reinitializable iterator
     iterator = Iterator.from_structure(data_train.output_types, data_train.output_shapes)
     iterator_test = Iterator.from_structure(data_test.output_types, data_test.output_shapes)
 
     next_batch = iterator.get_next()
     next_batch_test = iterator_test.get_next()
-    #tensor that initialize the iterator:
+    # tensor that initialize the iterator:
     training_init_op = iterator.make_initializer(data_train)
     testing_init_op = iterator_test.make_initializer(data_test)
-    print ("OK")
+    print("OK")
     with tf.device(device_name):
         net = sknet.net()
     print("train")
-    #to save snapshots
+    # to save snapshots
     saver = tf.train.Saver()
-    #load mean
-    #mean_img =np.fromfile(os.path.join(DATA_DIR, "mean.dat"), dtype=np.float32)
-    #mean_img = np.reshape(mean_img, [28,28])
-    #mean_img = mean_img.astype(np.float32)
-    if run_mode == "train" :
+    # load mean
+    # mean_img =np.fromfile(os.path.join(DATA_DIR, "mean.dat"), dtype=np.float32)
+    # mean_img = np.reshape(mean_img, [28,28])
+    # mean_img = mean_img.astype(np.float32)
+    if run_mode == "train":
         print("<<<Training Mode>>>")
         # cost optimizer
-        learning_rate = 0.0001 # It seems that  Adam requires an small learning rate
-        with tf.device(device_name) :
-            #update_ops allow some parameters of BN to be updated
+        learning_rate = 0.0001  # It seems that  Adam requires an small learning rate
+        with tf.device(device_name):
+            # update_ops allow some parameters of BN to be updated
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            with tf.control_dependencies(update_ops) :
+            with tf.control_dependencies(update_ops):
                 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(net['loss'])
 
         with tf.Session() as sess:
-            #-------------------initialization of variable of graph
+            # -------------------initialization of variable of graph
             sess.run(tf.global_variables_initializer())
-            #the following is used only to make tensorboard available
+            # the following is used only to make tensorboard available
             writer = tf.summary.FileWriter('logs', graph=tf.get_default_graph())
             sess.run(training_init_op)
             for n_iterations in range(conf.NUM_ITERATIONS):
                 try:
                     img, label = sess.run(next_batch)
-                    img_for_train = np.array([im  for im in img])
-                    sess.run(optimizer, feed_dict={net['x']: img_for_train, net['y_true']: label, net['is_training'] : True })
-                    #each 100 iterations print loss
+                    img_for_train = np.array([im for im in img])
+                    sess.run(optimizer,
+                             feed_dict={net['x']: img_for_train, net['y_true']: label, net['is_training']: True})
+                    # each 100 iterations print loss
                     if n_iterations % 100 == 0:
-                        loss = sess.run(net['loss'], feed_dict={net['x']: img_for_train, net['y_true']: label, net['is_training'] : True})
+                        loss = sess.run(net['loss'], feed_dict={net['x']: img_for_train, net['y_true']: label,
+                                                                net['is_training']: True})
                         print("Training iteration: {}, loss: {}".format(n_iterations, loss))
-                    #each SNAPSHOT_TIME iterations save snapshots
-                    if n_iterations % conf.SNAPSHOT_TIME == 0 or n_iterations == conf.NUM_ITERATIONS - 1 :
+                    # each SNAPSHOT_TIME iterations save snapshots
+                    if n_iterations % conf.SNAPSHOT_TIME == 0 or n_iterations == conf.NUM_ITERATIONS - 1:
                         saved_path = saver.save(sess, conf.SNAPSHOT_PREFIX, global_step=n_iterations)
                         print("saved: {}".format(saved_path))
-                    #each TEST_TIME iterations  print accuracsy
+                    # each TEST_TIME iterations  print accuracsy
                     if n_iterations % conf.TEST_TIME == 0:
-                        #------------- changing
+                        # ------------- changing
                         sess.run(testing_init_op)
                         test_loss = 0
                         test_acc = 0
                         for i_test in range(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST):
                             img, label = sess.run(next_batch_test)
                             img_for_test = np.array([im for im in img])
-                            loss = sess.run(net['loss'], feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training'] : False})
-                            acc = sess.run(net['acc'], feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training'] : False})
+                            loss = sess.run(net['loss'], feed_dict={net['x']: img_for_test, net['y_true']: label,
+                                                                    net['is_training']: False})
+                            acc = sess.run(net['acc'], feed_dict={net['x']: img_for_test, net['y_true']: label,
+                                                                  net['is_training']: False})
                             test_loss = test_loss + loss
                             test_acc = test_acc + acc
                         test_loss = test_loss / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
@@ -116,19 +123,21 @@ if __name__ == '__main__':
 
     elif run_mode == "test":
         with tf.Session() as sess:
-            #sess.run(tf.global_variables_initializer())
+            # sess.run(tf.global_variables_initializer())
             sess.run(testing_init_op)
-            print ("restoring .....\n")
-            #saver = tf.train.import_meta_graph('./trained/mnist_net-3000.meta')
-            #saver.restore(sess,tf.train.latest_checkpoint('./trained/'))#
+            print("restoring .....\n")
+            # saver = tf.train.import_meta_graph('./trained/mnist_net-3000.meta')
+            # saver.restore(sess,tf.train.latest_checkpoint('./trained/'))#
             saver.restore(sess, conf.SNAPSHOT_PREFIX + '-1999')
             test_loss = 0
             test_acc = 0
             for i_test in range(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST):
                 img, label = sess.run(next_batch_test)
                 img_for_test = np.array([im for im in img])
-                loss = sess.run(net['loss'], feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
-                acc = sess.run(net['acc'], feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
+                loss = sess.run(net['loss'],
+                                feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
+                acc = sess.run(net['acc'],
+                               feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
                 test_loss = test_loss + loss
                 test_acc = test_acc + acc
             test_loss = test_loss / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
