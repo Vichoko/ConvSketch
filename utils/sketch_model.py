@@ -30,8 +30,8 @@ def model_fn(features, labels, mode, params):
         is_training = False
     # creating the net to be used by Estimator
     # net = arch.net_fn(features, params['image_shape'], params['number_of_classes'], is_training)
-    net = arch.sknet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
-
+    # net = arch.sknet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
+    net = arch.skresnet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
     train_net = net["output"]
     # ---------------------------------------
     idx_predicted_class = tf.argmax(train_net, 1)

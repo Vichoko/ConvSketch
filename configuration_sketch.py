@@ -6,8 +6,7 @@ import pathlib
 
 import numpy
 
-NUM_ITERATIONS = 1000 # 1 iteration =  1 batch
-DATASET_SIZE = 60000  # for training
+NUM_ITERATIONS = 3000 # 1 iteration =  1 batch
 BATCH_SIZE = 100
 ESTIMATED_NUMBER_OF_BATCHES = 600
 ESTIMATED_NUMBER_OF_BATCHES_TEST = 100
