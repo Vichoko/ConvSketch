@@ -15,7 +15,7 @@ import numpy as np
 import tensorflow as tf
 
 import utils.data as data
-import utils.sketch_model as mnistnet
+import utils.sketch_model as sketchnet
 # define the input function
 from configuration_sketch import data_path, SNAPSHOT_PREFIX, IMAGE_DIMENSIONS, CLASSES_COUNT, SNAPSHOT_TIME, \
     LEARNING_RATE, ESTIMATED_NUMBER_OF_BATCHES, BATCH_SIZE, NUM_ITERATIONS, TEST_TIME
@@ -84,7 +84,7 @@ if __name__ == '__main__':
                                                   save_checkpoints_steps=SNAPSHOT_TIME,
                                                   keep_checkpoint_max=10)
 
-        classifier = tf.estimator.Estimator(model_fn=mnistnet.model_fn,
+        classifier = tf.estimator.Estimator(model_fn=sketchnet.model_fn,
                                             config=estimator_config,
                                             params={'learning_rate': LEARNING_RATE,
                                                     'number_of_classes': CLASSES_COUNT,
