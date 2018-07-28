@@ -10,76 +10,86 @@ demo for mnist
 
 """
 
+import utils.data as data
 import numpy as np
-from skimage import io
+import os
+import argparse
+import utils.sketch_model as mnistnet
 import tensorflow as tf
-import utils.skNet as sknet
-import matplotlib.pyplot as plt
-import sys
-import configuration_sketch as conf
+
 
 #-----------main
 
-def readImage(filename):
-    image =  io.imread(filename)
+#define the input function
+def input_fn(filename, image_shape, mean_img):
+    image = data.readImage(filename)
+    image = data.processMnistImage(image, (image_shape[1], image_shape[0]))
+    image = image - mean_img
     image = image.astype(np.float32)
-    image = 1.0 - image / 255.0
+    image = np.reshape(image, [1, image_shape[0], image_shape[1]])
     return image
 
 
+
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        raise ValueError("device mode is required, use gpu or cpu")
-    device_mode = sys.argv[1]
-    if  device_mode not in ["gpu", "cpu"] :
-        raise ValueError("device not suppoerted, choose cpu or gpu")
+    parser = argparse.ArgumentParser(description = "training / testing xk models")
+    #parser.add_argument("-mode", type=str, choices=['test', 'train'], help=" test | train ", required = True)
+    parser.add_argument("-image", type=str, help=" filename of image to be processed", required = True)
+    parser.add_argument("-device", type=str, choices=['cpu', 'gpu'], help=" cpu | gpu ", required = True)
+    parser.add_argument("-arch", type=str, help=" name of the architecture to train & test", required = True)
+    parser.add_argument("-ckpt", type=str, help="  checkpoint", required = False)
+    pargs = parser.parse_args()
+    conf = ConfigurationFile("configuration.config", pargs.arch)
+    #conf.show()
 
-    if device_mode == "gpu":
-        device_name = "/gpu:0"
-    else:
-        device_name = "/cpu:0"
+    device_name = "/" + pargs.device + ":0"
+    # verifying output path exists
+    if not os.path.exists(os.path.dirname(conf.getSnapshotPrefix())) :
+        os.makedirs(os.path.dirname(conf.getSnapshotPrefix()))
 
-    label_files = ["./images/0.png",
-              "./images/1.png",
-              "./images/2.png",
-              "./images/3.png",
-              "./images/4.png",
-              "./images/5.png",
-              "./images/6.png",
-              "./images/7.png",
-              "./images/8.png",
-              "./images/9.png",
-              ]
+    print ("loading data [train and test] \n")
+    filename_mean = os.path.join(conf.getDataDir(), "mean.dat")
+    metadata_file = os.path.join(conf.getDataDir(), "metadata.dat")
+    #reading metadata
+    metadata_array = np.fromfile(metadata_file, dtype=np.int)
+    image_shape = metadata_array[0:2]
+    number_of_classes = metadata_array[2]
+    print(metadata_array)
 
-    labels = []
-    for filename in label_files:
-        labels.append(io.imread(filename))
-
-    #filename  = "/media/hd_cvision/Datasets/Handwriting/MNIST/Test/digit_mnist_00033_3.png"
-
+    #load mean
+    mean_img =np.fromfile(filename_mean, dtype=np.float64)
+    mean_img = np.reshape(mean_img, image_shape.tolist())
+    #
+    filename_train = os.path.join(conf.getDataDir(), "train.tfrecords")
+    filename_test = os.path.join(conf.getDataDir(), "test.tfrecords")
 
     with tf.device(device_name):
-        net = sknet.net()
-    #to save snapshots
-    saver = tf.train.Saver()
-    #load mean
-    #mean_img =np.fromfile(os.path.join(str_path, "mean.dat"), dtype=np.float32)
-    #mean_img = np.reshape(mean_img, [28,28])
-    #mean_img = mean_img.astype(np.float32)
-    with tf.Session() as sess:
-    #-------------------initialization of variable of graph
-        saver.restore(sess, conf.SNAPSHOT_PREFIX + '-9999')
-        #the following is used only to make tensorboard available
-        fig, xs = plt.subplots(1,2)
-        while True:
-            filename = input("image:")
-            image = readImage(filename)
-            y_pred = sess.run(net['y_pred'], feed_dict={net['x']: [image]})
-            y_pred_cls = np.argmax(y_pred[0], 0)
-            prob = y_pred[0][int(y_pred_cls)]
-            for i in range(2):
-                xs[i].axis("off")
-            xs[0].imshow((1-image)*255, cmap='gray')
-            xs[1].imshow(labels[int(y_pred_cls)], cmap='gray')
-            xs[1].set_title(prob)
-            plt.waitforbuttonpress()
+        classifier = tf.estimator.Estimator(model_fn = mnistnet.model_fn,
+                                            model_dir = os.path.dirname(pargs.ckpt),
+                                            params = {'learning_rate' : 0,
+                                                      'number_of_classes' : conf.getNumnberOfClasses(),
+                                                      'image_shape' : image_shape
+                                                      })
+        #
+        tf.logging.set_verbosity(tf.logging.INFO) # Just to have some logs to display for demonstration
+        #training
+        filename = pargs.image
+        input_image = input_fn(filename, image_shape, mean_img)
+        print(input_image.shape)
+        predict_input_fn = tf.estimator.inputs.numpy_input_fn(
+                x=input_image,
+                num_epochs=1,
+                shuffle=False
+                )
+
+        predicted_result = list(classifier.predict(input_fn = predict_input_fn))
+        for prediction in predicted_result:
+            print("idx_predicted_class: {}".format(prediction["idx_predicted_class"]))
+            #deep_features = prediction["deep_feature"]
+            #uncomment to deep-features be showed
+            #print("deep_feature: {}".format(deep_features.shape))
+            #print("deep-features")
+            #print("-------------")
+            #print(deep_features)
+
+    print("ok")
