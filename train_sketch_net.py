@@ -1,145 +1,122 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon Mar  5 16:30:08 2018
 @author: jose.saavedra
 
 A convolutional neural network for mnist
-
+This uses Dataset and Estimator components from tensorflow
 
 """
-
+import argparse
 import os
-import sys
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.data import Iterator
 
-import configuration_sketch as conf
 import utils.data as data
-import utils.skNet as sknet
-from configuration_sketch import data_path
+import utils.sketch_model as mnistnet
+# define the input function
+from configuration_sketch import data_path, SNAPSHOT_PREFIX, IMAGE_DIMENSIONS, CLASSES_COUNT, SNAPSHOT_TIME, \
+    LEARNING_RATE, ESTIMATED_NUMBER_OF_BATCHES, BATCH_SIZE, NUM_ITERATIONS, TEST_TIME
 
+
+def input_fn(filename, image_shape, mean_img, is_training):
+    def parser_tfrecord_sk(serialized_example, mean_img):
+        features = tf.parse_example([serialized_example],
+                                    features={
+                                        'train/image': tf.FixedLenFeature([], tf.string),
+                                        'train/label': tf.FixedLenFeature([], tf.int64),
+                                    })
+        image = tf.decode_raw(features['train/image'], tf.uint8)
+        image = tf.reshape(image, [IMAGE_DIMENSIONS[0], IMAGE_DIMENSIONS[1]])
+        image = tf.cast(image, tf.float32) - tf.cast(tf.constant(mean_img), tf.float32)
+        # image = image * 1.0 / 255.0
+        # one-hot
+        label = tf.one_hot(tf.cast(features['train/label'], tf.int32), CLASSES_COUNT)
+        label = tf.reshape(label, [CLASSES_COUNT])
+        label = tf.cast(label, tf.float32)
+        return image, label
+
+    dataset = tf.data.TFRecordDataset(filename)
+    dataset = dataset.map(
+        lambda x: parser_tfrecord_sk(x, mean_img))
+    dataset = dataset.batch(BATCH_SIZE)
+    if is_training:
+        dataset = dataset.shuffle(ESTIMATED_NUMBER_OF_BATCHES)
+        epochs_no = int(NUM_ITERATIONS * 1.0 / ESTIMATED_NUMBER_OF_BATCHES)
+        dataset = dataset.repeat(epochs_no)
+        # for testing shuffle and repeat are not required
+    return dataset
+
+
+# -----------main----------------------
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        raise ValueError("input incorrect <mode> <device>")
-    run_mode = sys.argv[1]
-    device_mode = sys.argv[2]
-    if run_mode not in ["train", "test"]:
-        raise ValueError("mode should be  train or test")
-    if device_mode not in ["gpu", "cpu"]:
-        raise ValueError("device not supported, choose cpu or gpu")
+    parser = argparse.ArgumentParser(description="training / testing xk models")
+    parser.add_argument("-mode", type=str, choices=['test', 'train'], help=" test | train ", required=True)
+    parser.add_argument("-device", type=str, choices=['cpu', 'gpu'], help=" cpu | gpu ", required=True)
+    # parser.add_argument("-arch", type=str, help=" name of section in the configuration file", required=True)
+    parser.add_argument("-ckpt", type=str,
+                        help=" <optional>, it defines the checkpoint for training<fine tuning> or testing",
+                        required=False)
+    pargs = parser.parse_args()
+    run_mode = pargs.mode
+    device_name = "/" + pargs.device + ":0"
+    # verifying if output path exists
+    if not os.path.exists(os.path.dirname(SNAPSHOT_PREFIX)):
+        os.makedirs(os.path.dirname(SNAPSHOT_PREFIX))
+        # metadata
+    filename_mean = os.path.join(str(data_path), "mean.dat")
+    # reading metadata
+    image_shape = IMAGE_DIMENSIONS
+    number_of_classes = CLASSES_COUNT
 
-    if device_mode == "gpu":
-        device_name = "/gpu:0"
-    else:
-        device_name = "/cpu:0"
-
-    print("loading data [train and test] \n")
+    # load mean
+    mean_img = np.fromfile(filename_mean, dtype=np.float64)
+    mean_img = np.reshape(mean_img, image_shape.tolist())
+    # defining files for training and test
     filename_train = os.path.join(str(data_path), "train.tfrecords")
     filename_test = os.path.join(str(data_path), "train.tfrecords")
-    # ---------------read TFRecords data  for training
-    data_train = tf.data.TFRecordDataset(filename_train)
-    data_train = data_train.map(data.parser_tfrecord)
-    data_train = data_train.batch(conf.BATCH_SIZE)
-    data_train = data_train.shuffle(conf.ESTIMATED_NUMBER_OF_BATCHES)
-    # ---------------read TFRecords data  for validation
-    data_test = tf.data.TFRecordDataset(filename_test)
-    data_test = data_test.map(data.parser_tfrecord)
-    data_test = data_test.batch(conf.BATCH_SIZE)
-    data_test = data_test.shuffle(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-    # defining saver to save snapshots
-    # defining a reinitializable iterator
-    iterator = Iterator.from_structure(data_train.output_types, data_train.output_shapes)
-    iterator_test = Iterator.from_structure(data_test.output_types, data_test.output_shapes)
 
-    next_batch = iterator.get_next()
-    next_batch_test = iterator_test.get_next()
-    # tensor that initialize the iterator:
-    training_init_op = iterator.make_initializer(data_train)
-    testing_init_op = iterator_test.make_initializer(data_test)
-    print("OK")
+    # -using device gpu or cpu
     with tf.device(device_name):
-        net = sknet.net()
-    print("train")
-    # to save snapshots
-    saver = tf.train.Saver()
-    # load mean
-    # mean_img =np.fromfile(os.path.join(DATA_DIR, "mean.dat"), dtype=np.float32)
-    # mean_img = np.reshape(mean_img, [28,28])
-    # mean_img = mean_img.astype(np.float32)
-    if run_mode == "train":
-        print("<<<Training Mode>>>")
-        # cost optimizer
-        learning_rate = 0.0001  # It seems that  Adam requires an small learning rate
-        with tf.device(device_name):
-            # update_ops allow some parameters of BN to be updated
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            with tf.control_dependencies(update_ops):
-                optimizer = tf.train.AdamOptimizer(learning_rate).minimize(net['loss'])
+        estimator_config = tf.estimator.RunConfig(model_dir=SNAPSHOT_PREFIX,
+                                                  save_checkpoints_steps=SNAPSHOT_TIME,
+                                                  keep_checkpoint_max=10)
 
-        with tf.Session() as sess:
-            # -------------------initialization of variable of graph
-            sess.run(tf.global_variables_initializer())
-            # the following is used only to make tensorboard available
-            writer = tf.summary.FileWriter('logs', graph=tf.get_default_graph())
-            sess.run(training_init_op)
-            for n_iterations in range(conf.NUM_ITERATIONS):
-                try:
-                    img, label = sess.run(next_batch)
-                    img_for_train = np.array([im for im in img])
-                    sess.run(optimizer,
-                             feed_dict={net['x']: img_for_train, net['y_true']: label, net['is_training']: True})
-                    # each 100 iterations print loss
-                    if n_iterations % 100 == 0:
-                        loss = sess.run(net['loss'], feed_dict={net['x']: img_for_train, net['y_true']: label,
-                                                                net['is_training']: True})
-                        print("Training iteration: {}, loss: {}".format(n_iterations, loss))
-                    # each SNAPSHOT_TIME iterations save snapshots
-                    if n_iterations % conf.SNAPSHOT_TIME == 0 or n_iterations == conf.NUM_ITERATIONS - 1:
-                        saved_path = saver.save(sess, conf.SNAPSHOT_PREFIX, global_step=n_iterations)
-                        print("saved: {}".format(saved_path))
-                    # each TEST_TIME iterations  print accuracsy
-                    if n_iterations % conf.TEST_TIME == 0:
-                        # ------------- changing
-                        sess.run(testing_init_op)
-                        test_loss = 0
-                        test_acc = 0
-                        for i_test in range(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST):
-                            img, label = sess.run(next_batch_test)
-                            img_for_test = np.array([im for im in img])
-                            loss = sess.run(net['loss'], feed_dict={net['x']: img_for_test, net['y_true']: label,
-                                                                    net['is_training']: False})
-                            acc = sess.run(net['acc'], feed_dict={net['x']: img_for_test, net['y_true']: label,
-                                                                  net['is_training']: False})
-                            test_loss = test_loss + loss
-                            test_acc = test_acc + acc
-                        test_loss = test_loss / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-                        test_acc = test_acc / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-                        print("Testing  loss: {} acc: {} ".format(test_loss, test_acc))
-                except tf.errors.OutOfRangeError:
-                    sess.run(training_init_op)
+        classifier = tf.estimator.Estimator(model_fn=mnistnet.model_fn,
+                                            config=estimator_config,
+                                            params={'learning_rate': LEARNING_RATE,
+                                                    'number_of_classes': CLASSES_COUNT,
+                                                    'image_shape': image_shape,
+                                                    'model_dir': SNAPSHOT_PREFIX,
+                                                    'ckpt': pargs.ckpt
+                                                    }
+                                            )
+        #
+        tf.logging.set_verbosity(tf.logging.INFO)  # Just to have some logs to display for demonstration
+        # training
+        if run_mode == 'train':
+            train_spec = tf.estimator.TrainSpec(input_fn=lambda: input_fn(filename_train,
+                                                                          image_shape,
+                                                                          mean_img,
+                                                                          is_training=True),
+                                                max_steps=NUM_ITERATIONS)
+            # max_steps is not usefule when inherited checkpoint is used
+            eval_spec = tf.estimator.EvalSpec(input_fn=lambda: input_fn(filename_test,
+                                                                        image_shape,
+                                                                        mean_img,
+                                                                        is_training=False),
+                                              start_delay_secs=TEST_TIME,
+                                              throttle_secs=TEST_TIME * 2)
+            #
+            tf.estimator.train_and_evaluate(classifier, train_spec, eval_spec)
 
-    elif run_mode == "test":
-        with tf.Session() as sess:
-            # sess.run(tf.global_variables_initializer())
-            sess.run(testing_init_op)
-            print("restoring .....\n")
-            # saver = tf.train.import_meta_graph('./trained/mnist_net-3000.meta')
-            # saver.restore(sess,tf.train.latest_checkpoint('./trained/'))#
-            saver.restore(sess, conf.SNAPSHOT_PREFIX + '-1999')
-            test_loss = 0
-            test_acc = 0
-            for i_test in range(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST):
-                img, label = sess.run(next_batch_test)
-                img_for_test = np.array([im for im in img])
-                loss = sess.run(net['loss'],
-                                feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
-                acc = sess.run(net['acc'],
-                               feed_dict={net['x']: img_for_test, net['y_true']: label, net['is_training']: False})
-                test_loss = test_loss + loss
-                test_acc = test_acc + acc
-            test_loss = test_loss / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-            test_acc = test_acc / float(conf.ESTIMATED_NUMBER_OF_BATCHES_TEST)
-            print("Testing  loss: {} acc: {} ".format(test_loss, test_acc))
+        # testing
+        if run_mode == 'test':
+            result = classifier.evaluate(
+                input_fn=lambda: input_fn(filename_test, image_shape, mean_img, is_training=False),
+                checkpoint_path=pargs.ckpt)
+            print(result)
+
+    print("ok")
