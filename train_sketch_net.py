@@ -11,6 +11,7 @@ This uses Dataset and Estimator components from tensorflow
 import argparse
 import os
 
+import numpy
 import numpy as np
 import tensorflow as tf
 
@@ -19,6 +20,7 @@ import utils.sketch_model as sketchnet
 # define the input function
 from configuration_sketch import data_path, SNAPSHOT_PREFIX, IMAGE_DIMENSIONS, CLASSES_COUNT, SNAPSHOT_TIME, \
     LEARNING_RATE, ESTIMATED_NUMBER_OF_BATCHES, BATCH_SIZE, NUM_ITERATIONS, TEST_TIME
+from evaluate_similarity_lookup import mAP_test_set
 
 
 def input_fn(filename, image_shape, mean_img, is_training):
@@ -53,7 +55,7 @@ def input_fn(filename, image_shape, mean_img, is_training):
 # -----------main----------------------
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="training / testing xk models")
-    parser.add_argument("-mode", type=str, choices=['test', 'train'], help=" test | train ", required=True)
+    parser.add_argument("-mode", type=str, choices=['test', 'evaluate', 'train'], help=" test | evaluate | train ", required=True)
     parser.add_argument("-device", type=str, choices=['cpu', 'gpu'], help=" cpu | gpu ", required=True)
     # parser.add_argument("-arch", type=str, help=" name of section in the configuration file", required=True)
     parser.add_argument("-ckpt", type=str,
@@ -76,7 +78,7 @@ if __name__ == '__main__':
     mean_img = np.reshape(mean_img, image_shape.tolist())
     # defining files for training and test
     filename_train = os.path.join(str(data_path), "train.tfrecords")
-    filename_test = os.path.join(str(data_path), "train.tfrecords")
+    filename_test = os.path.join(str(data_path), "test.tfrecords")
 
     # -using device gpu or cpu
     with tf.device(device_name):
@@ -113,10 +115,23 @@ if __name__ == '__main__':
             tf.estimator.train_and_evaluate(classifier, train_spec, eval_spec)
 
         # testing
-        if run_mode == 'test':
+        if run_mode == 'evaluate':
             result = classifier.evaluate(
                 input_fn=lambda: input_fn(filename_test, image_shape, mean_img, is_training=False),
                 checkpoint_path=pargs.ckpt)
             print(result)
+
+        if run_mode == 'test':
+            result = classifier.predict(
+                input_fn=lambda: input_fn(filename_test, image_shape, mean_img, is_training=False),
+                checkpoint_path=pargs.ckpt)
+            vectors = []
+            for prediction in result:
+                deep_features = prediction["deep_feature"]
+                vectors.append(deep_features)
+            vectors = numpy.array(vectors)
+            mAP_test_set(vectors)
+
+
 
     print("ok")

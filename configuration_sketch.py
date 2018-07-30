@@ -6,12 +6,12 @@ import pathlib
 
 import numpy
 
-NUM_ITERATIONS = 3000 # 1 iteration =  1 batch
+NUM_ITERATIONS = 10000 # 1 iteration =  1 batch
 BATCH_SIZE = 100
 ESTIMATED_NUMBER_OF_BATCHES = 600
 ESTIMATED_NUMBER_OF_BATCHES_TEST = 100
 SNAPSHOT_TIME = 1000
-TEST_TIME = 600
+TEST_TIME = 60
 SNAPSHOT_PREFIX = './snapshot_trained_sketch'
 DATA_DIR = 'D:/dataset/quickdraw/numpy_bitmap'
 

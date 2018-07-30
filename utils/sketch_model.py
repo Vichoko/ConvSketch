@@ -6,9 +6,11 @@ Created on Mon Mar 26 11:29:43 2018
 @author: Jose M. Saavedra
 """
 
-import tensorflow as tf
-from . import sketch_arch as arch
 import os
+
+import tensorflow as tf
+
+from . import sketch_arch as arch
 
 
 def initializedModel(model_dir):
@@ -28,10 +30,16 @@ def model_fn(features, labels, mode, params):
         is_training = True
     else:
         is_training = False
+
+    net_type = "net"
+    if net_type is "resnet":
+        net = arch.skresnet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
+    else:
+        net = arch.sknet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
+
     # creating the net to be used by Estimator
     # net = arch.net_fn(features, params['image_shape'], params['number_of_classes'], is_training)
-    # net = arch.sknet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
-    net = arch.skresnet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
+    #
     train_net = net["output"]
     # ---------------------------------------
     idx_predicted_class = tf.argmax(train_net, 1)

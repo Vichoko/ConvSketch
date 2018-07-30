@@ -3,11 +3,13 @@ import numpy
 from configuration_sketch import CLASSES_COUNT, TEST_EXAMPLES_PER_CLASS
 
 
-def main():
-    # load vectors; dims should be (50*100, 1024) and be ordered
-    vectors_path = ''
-    # class_bitmaps = numpy.load(vectors_path, 'r')
-    feature_vectors = numpy.random.rand(TEST_EXAMPLES_PER_CLASS * CLASSES_COUNT, 1024)  # STUB todo: remove
+def mAP_test_set(feature_vectors):
+    """
+
+    :param feature_vectors: dims should be (50*100, 1024) and be ordered
+    :return:
+    """
+
     labels = []
     for label_idx in range(CLASSES_COUNT):
         # as test data is ordered by class, labels can be generaed this way
@@ -56,4 +58,4 @@ def calculate_mAP(feature_vectors, labels):
 
 
 if __name__ == "__main__":
-    main()
+    mAP_test_set(feature_vectors = numpy.random.rand(TEST_EXAMPLES_PER_CLASS * CLASSES_COUNT, 1024))
