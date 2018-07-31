@@ -105,7 +105,7 @@ if __name__ == '__main__':
                                                                           is_training=True),
                                                 max_steps=NUM_ITERATIONS)
             # max_steps is not usefule when inherited checkpoint is used
-            eval_spec = tf.estimator.EvalSpec(input_fn=lambda: input_fn(filename_test,
+            eval_spec = tf.estimator.EvalSpec(input_fn=lambda: input_fn(filename_train,
                                                                         image_shape,
                                                                         mean_img,
                                                                         is_training=False),

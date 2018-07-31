@@ -10,6 +10,7 @@ import os
 
 import tensorflow as tf
 
+from configuration_sketch import net_type
 from . import sketch_arch as arch
 
 
@@ -31,7 +32,7 @@ def model_fn(features, labels, mode, params):
     else:
         is_training = False
 
-    net_type = "net"
+
     if net_type is "resnet":
         net = arch.skresnet_fn(features, params['image_shape'], params['number_of_classes'], is_training)
     else:
